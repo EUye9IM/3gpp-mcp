@@ -1,0 +1,17 @@
+# Data directory (SQLite DB, indexes, cached specs)
+data/
+
+# Test artifacts
+*.zip
+*.zip:Zone.Identifier
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go binary
+bin/
