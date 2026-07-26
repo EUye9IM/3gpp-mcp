@@ -13,7 +13,9 @@ import (
 
 // NewServer creates an MCP server backed by the given Core.
 func NewServer(c *core.Core) *server.MCPServer {
-	s := server.NewMCPServer("3gpp-mcp", "1.0.0")
+	s := server.NewMCPServer("3gpp-mcp", "1.0.0",
+		server.WithResourceCapabilities(false, true),
+	)
 
 	registerTools(s, c)
 	registerResources(s, c)
@@ -69,6 +71,48 @@ func registerTools(s *server.MCPServer, c *core.Core) {
 			return mcpgo.NewToolResultError(err.Error()), nil
 		}
 		return marshalResult(results)
+	})
+
+	s.AddTool(mcpgo.NewTool("get_section",
+		mcpgo.WithDescription("Read a specific section of a 3GPP specification. For non-leaf sections returns the section content plus its immediate child section numbers and titles. Use to navigate the spec table of contents."),
+		mcpgo.WithString("spec_id", mcpgo.Required(), mcpgo.Description("Specification ID (e.g. 38.331)")),
+		mcpgo.WithString("section", mcpgo.Description("Section number (e.g. 5.3.7). Omit for top-level table of contents.")),
+		mcpgo.WithString("release", mcpgo.Description("Release label (e.g. Rel-18). Defaults to latest.")),
+	), func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		args := req.GetArguments()
+		specID := getString(args, "spec_id")
+		section := getString(args, "section")
+		release := getString(args, "release")
+		if release == "" {
+			sp, _ := c.Catalog().Get(specID)
+			if sp != nil {
+				release = releaseFromVersion(sp.Version)
+			}
+			if release == "" {
+				release = "Rel-18"
+			}
+		}
+
+		if section == "" {
+			// Return overview / table of contents
+			sp, children, err := c.GetSpecOverview(specID)
+			if err != nil {
+				return mcpgo.NewToolResultError(err.Error()), nil
+			}
+			return marshalResult(map[string]any{
+				"spec":     sp,
+				"sections": children,
+			})
+		}
+
+		sec, children, err := c.GetSection(specID, release, section)
+		if err != nil {
+			return mcpgo.NewToolResultError(err.Error()), nil
+		}
+		return marshalResult(map[string]any{
+			"section":  sec,
+			"children": children,
+		})
 	})
 }
 
