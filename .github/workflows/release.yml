@@ -42,7 +42,6 @@ jobs:
         if: matrix.goos == 'windows'
         run: |
           cd dist
-          mv 3gpp-mcp 3gpp-mcp.exe
           zip 3gpp-mcp-${{ matrix.goos }}-${{ matrix.goarch }}.zip 3gpp-mcp.exe
           shasum -a 256 3gpp-mcp-${{ matrix.goos }}-${{ matrix.goarch }}.zip > 3gpp-mcp-${{ matrix.goos }}-${{ matrix.goarch }}.zip.sha256
 
