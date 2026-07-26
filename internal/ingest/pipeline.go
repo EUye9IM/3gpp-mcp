@@ -54,8 +54,6 @@ func (p *Pipeline) Run(specID, release string) error {
 
 	result, err := p.parser.Parse(docxPath, specID, release)
 	if err != nil {
-		// Clean up partial DB data
-		p.specStore.DeleteContent(specID)
 		return fmt.Errorf("parse: %w", err)
 	}
 
@@ -64,7 +62,6 @@ func (p *Pipeline) Run(specID, release string) error {
 	}
 
 	if err := p.specStore.InsertSections(specID, release, result.Sections); err != nil {
-		p.specStore.DeleteContent(specID)
 		return fmt.Errorf("store sections: %w", err)
 	}
 
