@@ -224,7 +224,7 @@ func splitSectionNumber(text string, runs []string) (number, title string) {
 	}
 
 	if len(numParts) > 0 {
-		// Join fragments smartly: "4." + "1.1" → "4.1.1", not "4..1.1"
+		// Join fragments smartly: "4." + ".1" → "4.1", "4." + "1.1" → "4.1.1"
 		var n strings.Builder
 		for _, p := range numParts {
 			s := strings.TrimRight(p, ".")
@@ -232,6 +232,9 @@ func splitSectionNumber(text string, runs []string) (number, title string) {
 				continue
 			}
 			if n.Len() > 0 {
+				if strings.HasPrefix(s, ".") {
+					s = s[1:]
+				}
 				n.WriteByte('.')
 			}
 			n.WriteString(s)
@@ -266,6 +269,10 @@ func isNumberFragment(s string) bool {
 	// Single letter (Annex A, B, etc.)
 	if len(s) == 1 && s[0] >= 'A' && s[0] <= 'Z' {
 		return true
+	}
+	// Fraction continuation: ".1", ".1.2"
+	if strings.HasPrefix(s, ".") {
+		s = s[1:]
 	}
 	// Digit(s) optionally with embedded dots: "1", "1.1", "1.1.1"
 	if numFragmentRE2.MatchString(s) {
