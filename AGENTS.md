@@ -56,36 +56,13 @@ internal/
 ## Code Conventions
 
 - Go standard library preferred; minimize external dependencies.
-- Go version: **1.22** (must stay compatible).
 - Use `log/slog` for logging.
-- SQLite via `github.com/glebarez/go-sqlite` (CGO-free, includes FTS5).
+- SQLite via `modernc.org/sqlite` (CGO-free, includes FTS5).
 - Search via SQLite FTS5 (built into go-sqlite, no separate dependency).
 - CLI via `github.com/spf13/cobra`.
 - MCP via `github.com/mark3labs/mcp-go`.
 - No CGO. No external binary dependencies (no libreoffice).
 - Spec download via HTTPS (not FTP; 3GPP server requires Referer header).
-
-## Dependency Version Pinning (Go Module Lessons)
-
-**Problem**: Go's module resolution picks the latest compatible version of each transitive dependency. If a newer transitive dep requires a higher Go version, `go mod tidy` upgrades the `go` directive beyond our target (1.22).
-
-**Solution**: 
-1. Use `github.com/glebarez/go-sqlite@v1.22.0` (fewer transitive deps, explicitly targets Go 1.22).
-2. Pin ALL transitive `modernc.org/*` and `golang.org/x/*` deps to versions compatible with Go 1.22 by adding them as explicit indirect requires in `go.mod`.
-3. Use `GOTOOLCHAIN=local go1.22.0 <cmd>` instead of `go <cmd>` to prevent Go from auto-upgrading the toolchain.
-4. After any `go get` or new import, run `GOTOOLCHAIN=local go1.22.0 mod tidy` and verify `head -3 go.mod` still shows `go 1.22`.
-
-**Known-good compatible versions** (Go 1.22):
-- `github.com/glebarez/go-sqlite v1.22.0`
-- `golang.org/x/sys v0.25.0`
-- `modernc.org/libc v1.55.2`
-- `modernc.org/mathutil v1.6.0`
-- `modernc.org/memory v1.8.0`
-
-**If a new dependency breaks the `go 1.22` requirement**:
-1. Check `go list -m -json <module>@<version>` to find the minimum Go version.
-2. Bisect to find a compatible version: try successively older versions until `GoVersion` is `<= 1.22`.
-3. Pin it explicitly in `go.mod` under the `require` block (direct or indirect).
 - Error handling: return wrapped errors with context; never panic in library code.
 - Tests: table-driven tests in `*_test.go` files alongside source. Use `go test -race` in CI.
 

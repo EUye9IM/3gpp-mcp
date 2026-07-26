@@ -6,6 +6,8 @@
 
 ## 安装
 
+从 GitHub Releases 下载预编译二进制，或从源码构建：
+
 ```bash
 go build -o bin/3gpp-mcp ./cmd/3gpp-mcp/
 ```

@@ -11,8 +11,10 @@ import (
 	"github.com/3gpp-mcp/3gpp-mcp/internal/config"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/core"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/ingest"
+	"github.com/3gpp-mcp/3gpp-mcp/internal/mcp"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/model"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/store"
+	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/spf13/cobra"
 )
@@ -263,10 +265,25 @@ func serverCmd() *cobra.Command {
 		Use:   "server",
 		Short: "Start MCP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg.Transport = transport
-			cfg.ServerAddr = addr
-			fmt.Fprintf(os.Stderr, "MCP server transport=%s addr=%s (not yet implemented)\n", transport, addr)
-			return nil
+			srv := mcp.NewServer(c)
+
+			switch transport {
+			case "stdio":
+				return server.ServeStdio(srv)
+			case "sse":
+				sse := server.NewSSEServer(srv, server.WithBaseURL("http://"+addr))
+				return sse.Start(addr)
+			case "both":
+				sse := server.NewSSEServer(srv, server.WithBaseURL("http://"+addr))
+				go func() {
+					if err := sse.Start(addr); err != nil {
+						slog.Error("SSE server", "err", err)
+					}
+				}()
+				return server.ServeStdio(srv)
+			default:
+				return fmt.Errorf("unknown transport: %s", transport)
+			}
 		},
 	}
 

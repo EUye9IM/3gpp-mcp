@@ -43,14 +43,12 @@ cli/ ──▶ core/ ◀── mcp/
 
 | 项 | 值 |
 |---|---|
-| Go 版本 | 1.22 |
 | CGO | 禁止 |
 | 外部二进制依赖 | 无（不用 LibreOffice） |
-| SQLite 驱动 | `github.com/glebarez/go-sqlite`（CGO-free） |
+| SQLite 驱动 | `modernc.org/sqlite`（纯 Go） |
 | 搜索 | SQLite FTS5（内置全文搜索） |
 | CLI | `github.com/spf13/cobra` |
 | MCP | `github.com/mark3labs/mcp-go` |
-| FTP | `github.com/jlaffaye/ftp` |
 | .docx 解析 | Go 标准库 `archive/zip` + `encoding/xml` |
 
 ## 四、数据模型

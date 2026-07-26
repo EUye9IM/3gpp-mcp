@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	_ "github.com/glebarez/go-sqlite"
+	_ "modernc.org/sqlite"
 )
 
 const (
