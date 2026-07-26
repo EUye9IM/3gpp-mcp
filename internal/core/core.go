@@ -135,3 +135,15 @@ func (c *Core) CachedSpecs() ([]struct {
 func (c *Core) DeleteCachedSpec(specID string) error {
 	return c.specStore.DeleteContent(specID)
 }
+
+// DownloadDocx downloads the Word document for a spec and saves it to destPath.
+func (c *Core) DownloadDocx(specID, release, destPath string) (string, error) {
+	sp, err := c.catalogStore.Get(specID)
+	if err != nil {
+		return "", err
+	}
+	if sp == nil {
+		return "", fmt.Errorf("spec %s not found in catalog", specID)
+	}
+	return c.pipeline.DownloadDocx(specID, release, destPath)
+}

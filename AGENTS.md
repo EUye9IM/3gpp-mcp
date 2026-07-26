@@ -19,6 +19,8 @@ go build -o bin/3gpp-mcp ./cmd/3gpp-mcp/
 # Run CLI
 go run ./cmd/3gpp-mcp/ catalog
 go run ./cmd/3gpp-mcp/ spec 38.331 --release Rel-18
+go run ./cmd/3gpp-mcp/ download 38.331
+go run ./cmd/3gpp-mcp/ download 38.331 -o /path/to/output.docx
 
 # Run MCP server
 go run ./cmd/3gpp-mcp/ server --transport stdio

@@ -40,6 +40,7 @@ func main() {
 		catalogCmd(),
 		specCmd(),
 		searchCmd(),
+		downloadCmd(),
 		serverCmd(),
 		syncCmd(),
 		cacheStatusCmd(),
@@ -253,6 +254,48 @@ func searchCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&release, "release", "", "release label")
+
+	return cmd
+}
+
+func downloadCmd() *cobra.Command {
+	var release string
+	var outputPath string
+
+	cmd := &cobra.Command{
+		Use:   "download <spec_id>",
+		Short: "Download a 3GPP specification Word document",
+		Long:  "Download the raw .docx file for a specification. By default saves to <spec_id>.docx in the current directory.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			specID := args[0]
+
+			if release == "" {
+				sp, _ := c.Catalog().Get(specID)
+				if sp != nil {
+					release = releaseFromVersion(sp.Version)
+				}
+				if release == "" {
+					release = "Rel-18"
+				}
+			}
+
+			dest := outputPath
+			if dest == "" {
+				dest = specID + ".docx"
+			}
+
+			path, err := c.DownloadDocx(specID, release, dest)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("downloaded %s\n", path)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&release, "release", "", "release label (e.g. Rel-18)")
+	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "output path (default: <spec_id>.docx)")
 
 	return cmd
 }

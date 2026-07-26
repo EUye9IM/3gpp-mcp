@@ -3,6 +3,7 @@ package ingest
 import (
 	"archive/zip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -110,4 +111,42 @@ func (p *Pipeline) extractFile(f *zip.File, dest string) error {
 	}
 
 	return nil
+}
+
+// DownloadDocx downloads the spec ZIP, extracts the .docx, and saves it to destPath.
+func (p *Pipeline) DownloadDocx(specID, release, destPath string) (string, error) {
+	tempDir, err := os.MkdirTemp("", "3gpp-download-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	zipPath, err := p.downloader.Download(specID, release, tempDir)
+	if err != nil {
+		return "", fmt.Errorf("download: %w", err)
+	}
+
+	docxPath, err := p.extractDocx(zipPath, tempDir)
+	if err != nil {
+		return "", fmt.Errorf("extract: %w", err)
+	}
+
+	src, err := os.Open(docxPath)
+	if err != nil {
+		return "", fmt.Errorf("open source: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.Create(destPath)
+	if err != nil {
+		return "", fmt.Errorf("create destination: %w", err)
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		os.Remove(destPath)
+		return "", fmt.Errorf("copy: %w", err)
+	}
+
+	return destPath, nil
 }

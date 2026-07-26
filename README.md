@@ -57,6 +57,19 @@ go build -o bin/3gpp-mcp ./cmd/3gpp-mcp/
 3gpp-mcp search 38.331 "RRCReestablishment" -c 5
 ```
 
+### 下载规范文档
+
+```bash
+# 下载到当前目录（默认文件名: <spec_id>.docx）
+3gpp-mcp download 38.331
+
+# 指定 Release
+3gpp-mcp download 38.331 --release Rel-18
+
+# 指定输出路径
+3gpp-mcp download 38.331 -o /path/to/38.331.docx
+```
+
 ### 缓存管理
 
 ```bash
