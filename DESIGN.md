@@ -17,7 +17,7 @@ internal/
   mcp/                        # MCP 协议：server, handler, transports (stdio/SSE)
   core/                       # 核心业务逻辑（cli 与 mcp 共享）
   model/                      # 领域类型：Spec, Section, SearchResult
-  store/                      # 数据层：SQLite + bleve 索引
+  store/                      # 数据层：SQLite（含 FTS5 全文搜索）
   ingest/                     # 按需下载 + .docx 解析流水线
   config/                     # 配置结构体与默认值
 ```
@@ -46,8 +46,8 @@ cli/ ──▶ core/ ◀── mcp/
 | Go 版本 | 1.22 |
 | CGO | 禁止 |
 | 外部二进制依赖 | 无（不用 LibreOffice） |
-| SQLite 驱动 | `modernc.org/sqlite`（纯 Go） |
-| 搜索 | `github.com/blevesearch/bleve/v2`（per-spec 索引） |
+| SQLite 驱动 | `github.com/glebarez/go-sqlite`（CGO-free） |
+| 搜索 | SQLite FTS5（内置全文搜索） |
 | CLI | `github.com/spf13/cobra` |
 | MCP | `github.com/mark3labs/mcp-go` |
 | FTP | `github.com/jlaffaye/ftp` |
@@ -208,22 +208,37 @@ func (c *Core) GetSpecContent(specID, release, sectionNumber string) (*model.Sec
 
 ### 8.1 索引
 
-- **Per-spec per-release bleve 索引**：路径 `data/index/{spec_id}/{release}/`
-- 首次下载规范时懒创建
-- 索引粒度：每个 `<w:p>` 段落为一个 bleve 文档
+- **SQLite FTS5 全文搜索**：使用 SQLite 内置 FTS5 模块
+- FTS5 虚拟表通过触发器与 `sections` 表自动同步（INSERT/UPDATE/DELETE）
+- 索引粒度：逐节为 FTS5 文档
 
-### 8.2 搜索范围
+```sql
+CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
+    spec_id, release, section_number, title, content
+);
+```
 
-- 仅支持 `search_spec(spec_id, query, release?)` — 在指定规范内搜索
-- 不提供跨规范内容搜索
+### 8.2 搜索语法
+
+FTS5 支持丰富的查询语法：
+- 关键词匹配：`AMF authentication`
+- 短语搜索：`"service based interface"`
+- 前缀搜索：`handov*`
+- 布尔运算：`AMF AND SMF`, `AMF OR UE`, `AMF -SMF`
+- 列限定：`title:AMF`（仅在标题中搜索）
+- 邻近搜索：`NEAR(AMF UE, 5)`
+
+### 8.3 搜索范围
+
+- `search_spec(spec_id, query, release?)` — 在指定规范内搜索
+- 可通过 `spec_id` 可选实现跨规范搜索
 - `list_specs --keyword "RRC"` 搜索的是**标题**，非内容
 
-### 8.3 缓存清除
+### 8.4 缓存清除
 
 `cache-clear <spec_id>` 清除：
-1. SQLite 中该 spec 相关行
-2. 对应的 bleve 索引目录
-3. 缓存的 ZIP 文件
+1. SQLite 中该 spec 相关行（sections + FTS5 自动级联删除）
+2. 缓存的 ZIP 文件
 
 ## 九、Release → 版本映射
 
@@ -276,12 +291,7 @@ func (c *Core) GetSpecContent(specID, release, sectionNumber string) (*model.Sec
 
 ```
 data/
-├── specs.db                              # SQLite 数据库（元数据 + 章节内容）
-├── index/
-│   ├── 38.331/
-│   │   └── Rel-18/                       # per-spec per-release bleve 索引
-│   └── 23.501/
-│       └── Rel-18/
+├── specs.db                              # SQLite 数据库（元数据 + 章节 + FTS5 全文索引）
 └── cache/
     └── 38.331/38331-g70.zip              # 可选的 ZIP 文件缓存
 ```
@@ -305,7 +315,6 @@ data/
 
 - 无离线模式：dynareport 不可达时服务无法启动
 - 无跨进程下载去重
-- 无跨规范内容搜索
 - 无 Procedure/IE 类型提取
 - 无版本对比
 - 无内容分页/截断

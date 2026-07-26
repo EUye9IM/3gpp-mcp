@@ -37,7 +37,7 @@ internal/
   mcp/                        # MCP protocol: server, handler, transports (stdio/SSE)
   core/                       # Shared business logic (catalog, spec retrieval, search)
   model/                      # Domain types: Spec, Section, Release, SearchResult
-  store/                      # SQLite (metadata + parsed text) + bleve search index
+  store/                      # SQLite (metadata + parsed text + FTS5 search)
   ingest/                     # On-demand spec download (FTP) + .docx parsing pipeline
   config/                     # Config struct and defaults
 ```
@@ -48,7 +48,7 @@ internal/
 - **Catalog from dynareport**: Catalog scraped from `3gpp.org/dynareport?code=status-report.htm` on first run. No embedded JSON.
 - **Pure Go .docx parsing**: 3GPP specs are .docx (Office Open XML). Parse via `archive/zip` + `encoding/xml`. No external binary dependencies.
 - **Section storage**: Flat SQLite table with `section_number` + `parent_number` (materialized path).
-- **Per-spec bleve index**: One bleve index per (spec, release) at `data/index/{spec_id}/{release}/`.
+- **FTS5 full-text search**: SQLite FTS5 virtual table, auto-synced with sections table via triggers.
 - **CLI + MCP share the `core/` layer**: `cli/` handles arg parsing and output formatting; `mcp/` handles MCP protocol. Both call into `core/`.
 - **Dual output**: `--json` flag on all CLI commands produces structured JSON for AI consumption; default is human-readable ANSI text.
 - **Data sources**: HTTPS for directory listing + dynareport (public, with User-Agent). FTP for spec ZIP download (anonymous).
@@ -58,8 +58,8 @@ internal/
 - Go standard library preferred; minimize external dependencies.
 - Go version: **1.22** (must stay compatible).
 - Use `log/slog` for logging.
-- SQLite via `github.com/glebarez/go-sqlite` (CGO-free).
-- Search via `github.com/blevesearch/bleve/v2`.
+- SQLite via `github.com/glebarez/go-sqlite` (CGO-free, includes FTS5).
+- Search via SQLite FTS5 (built into go-sqlite, no separate dependency).
 - CLI via `github.com/spf13/cobra`.
 - MCP via `github.com/mark3labs/mcp-go`.
 - No CGO. No external binary dependencies (no libreoffice).
@@ -67,10 +67,10 @@ internal/
 
 ## Dependency Version Pinning (Go Module Lessons)
 
-**Problem**: Go's module resolution picks the latest compatible version of each transitive dependency. If a newer transitive dep requires a higher Go version, `go mod tidy` upgrades the `go` directive beyond our target (1.22). This happened with `modernc.org/sqlite` pulling in `golang.org/x/sys` v0.46.0 (requires Go 1.25).
+**Problem**: Go's module resolution picks the latest compatible version of each transitive dependency. If a newer transitive dep requires a higher Go version, `go mod tidy` upgrades the `go` directive beyond our target (1.22).
 
 **Solution**: 
-1. Use `github.com/glebarez/go-sqlite@v1.22.0` instead of `modernc.org/sqlite` (fewer transitive deps, explicitly targets Go 1.22).
+1. Use `github.com/glebarez/go-sqlite@v1.22.0` (fewer transitive deps, explicitly targets Go 1.22).
 2. Pin ALL transitive `modernc.org/*` and `golang.org/x/*` deps to versions compatible with Go 1.22 by adding them as explicit indirect requires in `go.mod`.
 3. Use `GOTOOLCHAIN=local go1.22.0 <cmd>` instead of `go <cmd>` to prevent Go from auto-upgrading the toolchain.
 4. After any `go get` or new import, run `GOTOOLCHAIN=local go1.22.0 mod tidy` and verify `head -3 go.mod` still shows `go 1.22`.

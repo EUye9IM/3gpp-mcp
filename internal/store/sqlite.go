@@ -169,6 +169,34 @@ func (d *DB) migrationV1(tx *sql.Tx) error {
 		`CREATE INDEX IF NOT EXISTS idx_sections_spec_release
 		 ON sections(spec_id, release)`,
 
+		// FTS5 full-text search virtual table, auto-synced via triggers.
+		`CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
+			spec_id,
+			release,
+			section_number,
+			title,
+			content,
+			content=sections,
+			content_rowid=id
+		)`,
+
+		`CREATE TRIGGER IF NOT EXISTS sections_ai AFTER INSERT ON sections BEGIN
+			INSERT INTO sections_fts(rowid, spec_id, release, section_number, title, content)
+			VALUES (new.id, new.spec_id, new.release, new.section_number, new.title, new.content);
+		END`,
+
+		`CREATE TRIGGER IF NOT EXISTS sections_ad AFTER DELETE ON sections BEGIN
+			INSERT INTO sections_fts(sections_fts, rowid, spec_id, release, section_number, title, content)
+			VALUES ('delete', old.id, old.spec_id, old.release, old.section_number, old.title, old.content);
+		END`,
+
+		`CREATE TRIGGER IF NOT EXISTS sections_au AFTER UPDATE ON sections BEGIN
+			INSERT INTO sections_fts(sections_fts, rowid, spec_id, release, section_number, title, content)
+			VALUES ('delete', old.id, old.spec_id, old.release, old.section_number, old.title, old.content);
+			INSERT INTO sections_fts(rowid, spec_id, release, section_number, title, content)
+			VALUES (new.id, new.spec_id, new.release, new.section_number, new.title, new.content);
+		END`,
+
 		`INSERT INTO schema_version (version) VALUES (1)`,
 	}
 
