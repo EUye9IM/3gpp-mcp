@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/3gpp-mcp/3gpp-mcp/internal/model"
 )
@@ -138,14 +141,12 @@ func (s *SpecStore) ListChildSections(specID, release, parentNumber string) ([]m
 			SELECT spec_id, release, section_number, parent_number, title, content
 			FROM sections
 			WHERE spec_id = ? AND release = ? AND parent_number IS NULL
-			ORDER BY section_number
 		`, specID, release)
 	} else {
 		rows, err = s.db.Query(`
 			SELECT spec_id, release, section_number, parent_number, title, content
 			FROM sections
 			WHERE spec_id = ? AND release = ? AND parent_number = ?
-			ORDER BY section_number
 		`, specID, release, parentNumber)
 	}
 	if err != nil {
@@ -165,6 +166,10 @@ func (s *SpecStore) ListChildSections(specID, release, parentNumber string) ([]m
 		}
 		sections = append(sections, sec)
 	}
+
+	sort.Slice(sections, func(i, j int) bool {
+		return sortSectionKey(sections[i].SectionNumber) < sortSectionKey(sections[j].SectionNumber)
+	})
 
 	return sections, rows.Err()
 }
@@ -206,4 +211,23 @@ func (s *SpecStore) ListCachedSpecs() ([]struct {
 		}{specID, release})
 	}
 	return results, rows.Err()
+}
+
+// sortSectionKey builds a sort key for natural ordering of section numbers.
+// Components are zero-padded to 6 digits (numerical) or kept as-is (text).
+// "6.1.10" → "000006.000001.000010", "6.1.2" → "000006.000001.000002".
+func sortSectionKey(num string) string {
+	parts := strings.Split(num, ".")
+	var key strings.Builder
+	for i, p := range parts {
+		if i > 0 {
+			key.WriteByte('.')
+		}
+		if n, err := strconv.Atoi(p); err == nil {
+			fmt.Fprintf(&key, "%06d", n)
+		} else {
+			key.WriteString(p)
+		}
+	}
+	return key.String()
 }

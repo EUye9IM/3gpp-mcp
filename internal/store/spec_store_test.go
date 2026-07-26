@@ -2,6 +2,8 @@ package store
 
 import (
 	"errors"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/3gpp-mcp/3gpp-mcp/internal/model"
@@ -129,4 +131,95 @@ func TestSpecStore_CachedSpecs(t *testing.T) {
 	if len(cached) != 2 {
 		t.Errorf("cached specs: want 2, got %d", len(cached))
 	}
+}
+
+func TestSortSectionKey(t *testing.T) {
+	tests := []struct {
+		input []string
+		want  []string
+	}{
+		{
+			input: []string{"6.1.10", "6.1.2", "6.1.1"},
+			want:  []string{"6.1.1", "6.1.2", "6.1.10"},
+		},
+		{
+			input: []string{"10", "1", "2", "3"},
+			want:  []string{"1", "2", "3", "10"},
+		},
+		{
+			input: []string{"A.2", "A.1", "A.10"},
+			want:  []string{"A.1", "A.2", "A.10"},
+		},
+		{
+			input: []string{"5.1.1", "5.1", "5"},
+			want:  []string{"5", "5.1", "5.1.1"},
+		},
+		{
+			input: []string{"Foreword", "1", "A"},
+			want:  []string{"1", "A", "Foreword"},
+		},
+		{
+			input: []string{"B.1", "A.2", "A.1.3", "A.1"},
+			want:  []string{"A.1", "A.1.3", "A.2", "B.1"},
+		},
+	}
+
+	for _, tt := range tests {
+		name := strings.Join(tt.input, ",")
+		t.Run(name, func(t *testing.T) {
+			got := make([]string, len(tt.input))
+			copy(got, tt.input)
+			sort.Slice(got, func(i, j int) bool {
+				return sortSectionKey(got[i]) < sortSectionKey(got[j])
+			})
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("at %d: want %q, got %q", i, tt.want[i], got[i])
+				}
+			}
+		})
+	}
+}
+
+func TestSpecStore_NaturalSortOrder(t *testing.T) {
+	db, _ := openTestStoreDB(t)
+	defer db.Close()
+
+	store := NewSpecStore(db)
+
+	sections := []model.Section{
+		{SectionNumber: "6.1.10", ParentNumber: "6.1", Title: "tenth", Content: "x"},
+		{SectionNumber: "6.1.2", ParentNumber: "6.1", Title: "second", Content: "x"},
+		{SectionNumber: "6.1.1", ParentNumber: "6.1", Title: "first", Content: "x"},
+		{SectionNumber: "5", ParentNumber: "", Title: "five", Content: "x"},
+		{SectionNumber: "6", ParentNumber: "", Title: "six", Content: "x"},
+		{SectionNumber: "6.1", ParentNumber: "6", Title: "overview", Content: "x"},
+	}
+	store.InsertSections("99.999", "Rel-99", sections)
+
+	t.Run("root order", func(t *testing.T) {
+		children, err := store.ListChildSections("99.999", "Rel-99", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"5", "6"}
+		for i, w := range want {
+			if i >= len(children) || children[i].SectionNumber != w {
+				t.Errorf("root[%d]: want %q, got %q", i, w, children[i].SectionNumber)
+			}
+		}
+	})
+
+	t.Run("child numeric order", func(t *testing.T) {
+		children, err := store.ListChildSections("99.999", "Rel-99", "6.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"6.1.1", "6.1.2", "6.1.10"}
+		for i, w := range want {
+			if i >= len(children) || children[i].SectionNumber != w {
+				t.Errorf("child[%d]: want %q, got %q", i, w, children[i].SectionNumber)
+			}
+		}
+	})
 }
