@@ -25,7 +25,7 @@ func NewServer(c *core.Core) *server.MCPServer {
 
 func registerTools(s *server.MCPServer, c *core.Core) {
 	s.AddTool(mcpgo.NewTool("list_specs",
-		mcpgo.WithDescription("List 3GPP specifications. Filter by series number and/or title keyword."),
+		mcpgo.WithDescription("List available 3GPP specifications by series number and/or title keyword. When you don't know which specification defines a concept, use this tool first to find candidate specs. Confirm the spec_id with the user before querying further."),
 		mcpgo.WithString("series", mcpgo.Description("Filter by series number (e.g. 38 for TS 38.xxx)")),
 		mcpgo.WithString("keyword", mcpgo.Description("Filter specs whose title contains this text")),
 	), func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
@@ -41,7 +41,7 @@ func registerTools(s *server.MCPServer, c *core.Core) {
 	})
 
 	s.AddTool(mcpgo.NewTool("search_spec",
-		mcpgo.WithDescription("Full-text search within a 3GPP specification. Uses FTS5 syntax."),
+		mcpgo.WithDescription("Full-text search within a 3GPP specification. Uses FTS5 syntax. IMPORTANT: Always confirm the spec_id with the user before calling this tool. Use list_specs first if you are unsure which spec to search."),
 		mcpgo.WithString("spec_id", mcpgo.Required(), mcpgo.Description("Specification ID (e.g. 38.331)")),
 		mcpgo.WithString("query", mcpgo.Required(), mcpgo.Description("FTS5 search query")),
 		mcpgo.WithString("release", mcpgo.Description("Release label (e.g. Rel-18). Defaults to latest.")),
@@ -74,7 +74,7 @@ func registerTools(s *server.MCPServer, c *core.Core) {
 	})
 
 	s.AddTool(mcpgo.NewTool("get_section",
-		mcpgo.WithDescription("Read a specific section of a 3GPP specification. For non-leaf sections returns the section content plus its immediate child section numbers and titles. Use to navigate the spec table of contents."),
+		mcpgo.WithDescription("Read a specific section of a 3GPP specification. For non-leaf sections returns the section content plus its immediate child section numbers and titles. Use to navigate the spec table of contents. IMPORTANT: Use search_spec first to discover relevant section numbers, then read the specific section with this tool."),
 		mcpgo.WithString("spec_id", mcpgo.Required(), mcpgo.Description("Specification ID (e.g. 38.331)")),
 		mcpgo.WithString("section", mcpgo.Description("Section number (e.g. 5.3.7). Omit for top-level table of contents.")),
 		mcpgo.WithString("release", mcpgo.Description("Release label (e.g. Rel-18). Defaults to latest.")),
