@@ -135,7 +135,7 @@ func registerResources(s *server.MCPServer, c *core.Core) {
 		mcpgo.WithTemplateMIMEType("application/json"),
 		mcpgo.WithTemplateDescription("Overview of a 3GPP specification: title, version, and top-level sections"),
 	), func(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents, error) {
-		specID := req.Params.Arguments["spec_id"].(string)
+		specID := getResourceArg(req.Params.Arguments, "spec_id")
 		sp, children, err := c.GetSpecOverview(specID)
 		if err != nil {
 			return nil, err
@@ -157,9 +157,9 @@ func registerResources(s *server.MCPServer, c *core.Core) {
 		mcpgo.WithTemplateDescription("Content of a specific section within a 3GPP specification"),
 	), func(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents, error) {
 		params := req.Params.Arguments
-		specID := params["spec_id"].(string)
-		release := params["release"].(string)
-		section := params["section"].(string)
+		specID := getResourceArg(params, "spec_id")
+		release := getResourceArg(params, "release")
+		section := getResourceArg(params, "section")
 
 		sec, children, err := c.GetSection(specID, release, section)
 		if err != nil {
@@ -184,14 +184,37 @@ func getString(args map[string]any, name string) string {
 	return ""
 }
 
+// getResourceArg safely extracts a string argument from resource template params.
+// mcp-go may store template args as []string. Returns the first value if a slice.
+func getResourceArg(args map[string]any, name string) string {
+	v, ok := args[name]
+	if !ok {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case []string:
+		if len(val) > 0 {
+			return val[0]
+		}
+	}
+	return fmt.Sprint(v)
+}
+
 func marshalResult(v any) (*mcpgo.CallToolResult, error) {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return mcpgo.NewToolResultError(err.Error()), nil
 	}
+	// nil slices marshal to "null"; replace with "[]" for consistent empty results.
+	text := string(data)
+	if text == "null" {
+		text = "[]"
+	}
 	return &mcpgo.CallToolResult{
 		Content: []mcpgo.Content{
-			mcpgo.TextContent{Type: "text", Text: string(data)},
+			mcpgo.TextContent{Type: "text", Text: text},
 		},
 	}, nil
 }

@@ -195,6 +195,17 @@ func (p *DocParser) resolveParagraphs(raw []rawPara, styles map[string]string) [
 
 // splitSectionNumber extracts the section number and title from heading text.
 func splitSectionNumber(text string, runs []string) (number, title string) {
+	// Regex-first extraction on the full text handles cases where runs are
+	// merged (e.g. "5.6.2.1"+"7" makes "5.6.2.17" but runs can't disambiguate).
+	if m := sectionNumRx.FindString(text); len(m) > 0 {
+		number = normalizeSectionNum(m)
+		title = strings.TrimSpace(text[len(m):])
+		if title == "" {
+			title = number
+		}
+		return
+	}
+
 	var allRuns []string
 	for _, r := range runs {
 		t := strings.TrimSpace(r)
@@ -224,22 +235,39 @@ func splitSectionNumber(text string, runs []string) (number, title string) {
 	}
 
 	if len(numParts) > 0 {
-		// Join fragments smartly: "4." + ".1" → "4.1", "4." + "1.1" → "4.1.1"
-		var n strings.Builder
+		// Group numParts: consecutive bare-digit fragments (no dots) are concatenated
+		// into a single level component. e.g. ["5.6.2.", "1", "5"] → "5.6.2.15"
+		var groups []string
+		var bareBuf strings.Builder
 		for _, p := range numParts {
-			s := strings.TrimRight(p, ".")
-			if s == "" {
+			t := strings.TrimRight(p, ".")
+			t = strings.TrimLeft(t, ".")
+			if t == "" {
 				continue
 			}
-			if n.Len() > 0 {
-				if strings.HasPrefix(s, ".") {
-					s = s[1:]
+			hadDot := strings.Contains(p, ".")
+			if hadDot {
+				if bareBuf.Len() > 0 {
+					groups = append(groups, bareBuf.String())
+					bareBuf.Reset()
 				}
+				groups = append(groups, t)
+			} else {
+				bareBuf.WriteString(t)
+			}
+		}
+		if bareBuf.Len() > 0 {
+			groups = append(groups, bareBuf.String())
+		}
+
+		var n strings.Builder
+		for i, g := range groups {
+			if i > 0 {
 				n.WriteByte('.')
 			}
-			n.WriteString(s)
+			n.WriteString(g)
 		}
-		number = normalizeSectionNum(n.String())
+		number = n.String()
 		title = strings.TrimSpace(strings.Join(allRuns[idx:], " "))
 		if title == "" {
 			title = number
@@ -247,16 +275,26 @@ func splitSectionNumber(text string, runs []string) (number, title string) {
 		return
 	}
 
-	// Fallback: use the first token of the text
+	// Fallback: token-based extraction from the raw text.
+	// Collect leading space-separated tokens that look like number fragments,
+	// normalize them into a section number, and use the remainder as the title.
+	parts := strings.Fields(text)
+	numEnd := 0
+	for numEnd < len(parts) && isNumberFragment(parts[numEnd]) {
+		numEnd++
+	}
+	if numEnd > 0 {
+		joined := strings.Join(parts[:numEnd], " ")
+		number = normalizeSectionNum(joined)
+		title = strings.TrimSpace(strings.Join(parts[numEnd:], " "))
+		if title == "" {
+			title = number
+		}
+		return
+	}
+
 	number = normalizeSectionNum(text)
 	title = text
-	if spaceIdx := strings.Index(text, " "); spaceIdx > 0 {
-		first := text[:spaceIdx]
-		if sectionNumRE.MatchString(first) {
-			number = normalizeSectionNum(first)
-			title = strings.TrimSpace(text[spaceIdx+1:])
-		}
-	}
 	return
 }
 
@@ -269,6 +307,13 @@ func isNumberFragment(s string) bool {
 	// Single letter (Annex A, B, etc.)
 	if len(s) == 1 && s[0] >= 'A' && s[0] <= 'Z' {
 		return true
+	}
+	// Annex subsection: "A.1", "A.1.2" – letter then dot then digits+subdots
+	if len(s) >= 3 && s[0] >= 'A' && s[0] <= 'Z' && s[1] == '.' {
+		if numFragmentRE2.MatchString(s[2:]) {
+			return true
+		}
+		return false
 	}
 	// Fraction continuation: ".1", ".1.2"
 	if strings.HasPrefix(s, ".") {
@@ -284,6 +329,11 @@ func isNumberFragment(s string) bool {
 var numFragmentRE2 = regexp.MustCompile(`^\d+[A-Za-z]?(?:\.\d+[A-Za-z]?)*\.?$`)
 
 var sectionNumRE = regexp.MustCompile(`^[A-Z]?\d+[A-Za-z]?`)
+
+// sectionNumRx extracts a full section number from the beginning of text.
+// Allows optional whitespace after dots (for "4. 1.3" → "4.1.3").
+// Handles: "5.6.2.17Type:", "A.1General", "4.1.1Overview", "4. 1.3 Network Functions".
+var sectionNumRx = regexp.MustCompile(`^(?:[A-Z]\s*\.\s*)?(?:\d+\s*\.\s*)*\d+`)
 
 // normalizeSectionNum collapses spaces and stray dots within a section number.
 func normalizeSectionNum(s string) string {
@@ -311,9 +361,30 @@ func normalizeSectionNum(s string) string {
 
 	if allFrags {
 		var result strings.Builder
+		partsJoined := make([]string, 0, len(parts))
+		bareBuf := strings.Builder{}
 		for _, p := range parts {
-			p = strings.TrimRight(p, ".")
-			if result.Len() > 0 {
+			trimmed := strings.TrimRight(p, ".")
+			if trimmed == "" {
+				continue
+			}
+			isBare := !strings.ContainsAny(trimmed, ".")
+			if isBare {
+				bareBuf.WriteString(trimmed)
+			} else {
+				if bareBuf.Len() > 0 {
+					partsJoined = append(partsJoined, bareBuf.String())
+					bareBuf.Reset()
+				}
+				partsJoined = append(partsJoined, trimmed)
+			}
+		}
+		if bareBuf.Len() > 0 {
+			partsJoined = append(partsJoined, bareBuf.String())
+			bareBuf.Reset()
+		}
+		for i, p := range partsJoined {
+			if i > 0 {
 				result.WriteByte('.')
 			}
 			result.WriteString(p)
