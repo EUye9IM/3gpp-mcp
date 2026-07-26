@@ -310,15 +310,10 @@ func isNumberFragment(s string) bool {
 	}
 	// Annex subsection: "A.1", "A.1.2" – letter then dot then digits+subdots
 	if len(s) >= 3 && s[0] >= 'A' && s[0] <= 'Z' && s[1] == '.' {
-		if numFragmentRE2.MatchString(s[2:]) {
-			return true
-		}
-		return false
+		return numFragmentRE2.MatchString(s[2:])
 	}
 	// Fraction continuation: ".1", ".1.2"
-	if strings.HasPrefix(s, ".") {
-		s = s[1:]
-	}
+	s = strings.TrimPrefix(s, ".")
 	// Digit(s) optionally with embedded dots: "1", "1.1", "1.1.1"
 	if numFragmentRE2.MatchString(s) {
 		return true
@@ -327,8 +322,6 @@ func isNumberFragment(s string) bool {
 }
 
 var numFragmentRE2 = regexp.MustCompile(`^\d+[A-Za-z]?(?:\.\d+[A-Za-z]?)*\.?$`)
-
-var sectionNumRE = regexp.MustCompile(`^[A-Z]?\d+[A-Za-z]?`)
 
 // sectionNumRx extracts a full section number from the beginning of text.
 // Allows optional whitespace after dots (for "4. 1.3" → "4.1.3").
