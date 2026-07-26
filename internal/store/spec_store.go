@@ -56,7 +56,7 @@ func (s *SpecStore) InsertSections(specID, release string, sections []model.Sect
 	}
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO sections (spec_id, release, section_number, parent_number, title, content)
+		INSERT OR REPLACE INTO sections (spec_id, release, section_number, parent_number, title, content)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {

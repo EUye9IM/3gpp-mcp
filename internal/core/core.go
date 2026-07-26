@@ -117,3 +117,21 @@ func (c *Core) SearchInSpec(specID, release, query string, limit int) ([]model.S
 
 	return results, nil
 }
+
+// Catalog exposes the CatalogStore for sync operations.
+func (c *Core) Catalog() *store.CatalogStore {
+	return c.catalogStore
+}
+
+// CachedSpecs returns all spec/release pairs that have cached content.
+func (c *Core) CachedSpecs() ([]struct {
+	SpecID  string
+	Release string
+}, error) {
+	return c.specStore.ListCachedSpecs()
+}
+
+// DeleteCachedSpec removes all cached content for a spec.
+func (c *Core) DeleteCachedSpec(specID string) error {
+	return c.specStore.DeleteContent(specID)
+}

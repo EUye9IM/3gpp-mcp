@@ -1,10 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
+	"text/tabwriter"
 
 	"github.com/3gpp-mcp/3gpp-mcp/internal/config"
+	"github.com/3gpp-mcp/3gpp-mcp/internal/core"
+	"github.com/3gpp-mcp/3gpp-mcp/internal/ingest"
+	"github.com/3gpp-mcp/3gpp-mcp/internal/model"
+	"github.com/3gpp-mcp/3gpp-mcp/internal/store"
 
 	"github.com/spf13/cobra"
 )
@@ -19,6 +27,9 @@ func main() {
 		Use:   "3gpp-mcp",
 		Short: "3GPP protocol specification knowledge tool",
 		Long:  "3GPP MCP Server — query 3GPP protocol specifications via CLI or MCP protocol.",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return initCore()
+		},
 	}
 
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "output as JSON")
@@ -40,6 +51,75 @@ func main() {
 	}
 }
 
+var c *core.Core
+
+func initCore() error {
+	os.MkdirAll(cfg.DataDir, 0755)
+
+	db, err := store.Open(cfg.DBPath())
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+
+	catStore := store.NewCatalogStore(db, cfg.HTTPUserAgent, cfg.DynareportURL)
+	specStore := store.NewSpecStore(db)
+	searchStore := store.NewSearchStore(db)
+
+	pipeline := ingest.NewPipeline(specStore, ingest.PipelineConfig{
+		DataDir: filepath.Join(cfg.DataDir, "cache"),
+		DownloaderCfg: ingest.DownloaderConfig{
+			UserAgent: cfg.HTTPUserAgent,
+		},
+	})
+
+	c = core.New(catStore, specStore, searchStore, pipeline)
+
+	// Auto-sync catalog if empty
+	n, err := catStore.Count()
+	if err != nil {
+		slog.Warn("failed to check catalog count", "err", err)
+	} else if n == 0 {
+		slog.Info("catalog empty, syncing from dynareport...")
+		count, syncErr := catStore.Sync()
+		if syncErr != nil {
+			slog.Warn("failed to sync catalog", "err", syncErr)
+		} else {
+			slog.Info("catalog synced", "specs", count)
+		}
+	}
+
+	return nil
+}
+
+func output(v any) {
+	if jsonOut {
+		b, _ := json.MarshalIndent(v, "", "  ")
+		fmt.Println(string(b))
+		return
+	}
+	switch val := v.(type) {
+	case []model.Spec:
+		w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "ID\tTitle\tSeries\tWG\tVersion")
+		for _, sp := range val {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sp.ID, sp.Title, sp.Series, sp.WG, sp.Version)
+		}
+		w.Flush()
+	case []model.Section:
+		for _, sec := range val {
+			fmt.Printf("  %-12s  %s\n", sec.SectionNumber, sec.Title)
+		}
+	case []model.SearchResult:
+		for _, r := range val {
+			fmt.Printf("--- %s §%s [%s] ---\n%s\n\n", r.SpecID, r.SectionNumber, r.SectionTitle, r.Content)
+		}
+	case int:
+		fmt.Println(v)
+	default:
+		fmt.Printf("%+v\n", v)
+	}
+}
+
 func catalogCmd() *cobra.Command {
 	var series string
 	var keyword string
@@ -48,8 +128,11 @@ func catalogCmd() *cobra.Command {
 		Use:   "catalog",
 		Short: "List 3GPP specifications",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: call core.Catalog.List(series, keyword)
-			fmt.Fprintln(os.Stderr, "not yet implemented")
+			specs, err := c.ListSpecs(series, keyword)
+			if err != nil {
+				return err
+			}
+			output(specs)
 			return nil
 		},
 	}
@@ -70,11 +153,59 @@ func specCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			specID := args[0]
-			// TODO: call core.Spec.GetOverview / GetContent
-			_ = specID
-			_ = release
-			_ = section
-			fmt.Fprintln(os.Stderr, "not yet implemented")
+
+			if section == "" {
+				// Overview
+				sp, children, err := c.GetSpecOverview(specID)
+				if err != nil {
+					return err
+				}
+				if children != nil {
+					if !jsonOut {
+						fmt.Printf("%s  %s  (series %s, %s)\n\n", sp.ID, sp.Title, sp.Series, sp.WG)
+					}
+					output(children)
+				} else {
+					if !jsonOut {
+						fmt.Printf("%s  %s  (series %s, %s)\n[not cached]\n", sp.ID, sp.Title, sp.Series, sp.WG)
+					} else {
+						output(sp)
+					}
+				}
+				return nil
+			}
+
+			// Specific section
+			if release == "" {
+				sp, _ := c.Catalog().Get(specID)
+				if sp != nil {
+					release = releaseFromVersion(sp.Version)
+				}
+				if release == "" {
+					release = "Rel-18"
+				}
+			}
+
+			sec, children, err := c.GetSection(specID, release, section)
+			if err != nil {
+				return err
+			}
+
+			if sec.Content != "" {
+				if !jsonOut {
+					fmt.Printf("%s §%s  %s\n", specID, sec.SectionNumber, sec.Title)
+					fmt.Printf("───\n%s\n", sec.Content)
+				}
+			}
+			if len(children) > 0 {
+				if !jsonOut {
+					fmt.Printf("\nSubsections:\n")
+				}
+				output(children)
+			}
+			if jsonOut {
+				output(sec)
+			}
 			return nil
 		},
 	}
@@ -87,7 +218,6 @@ func specCmd() *cobra.Command {
 
 func searchCmd() *cobra.Command {
 	var release string
-	var contextLines int
 
 	cmd := &cobra.Command{
 		Use:   "search <spec_id> <query>",
@@ -96,18 +226,31 @@ func searchCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			specID := args[0]
 			query := args[1]
-			// TODO: call core.Search.SearchSpec(specID, query, release, contextLines)
-			_ = specID
-			_ = query
-			_ = release
-			_ = contextLines
-			fmt.Fprintln(os.Stderr, "not yet implemented")
+
+			if release == "" {
+				sp, _ := c.Catalog().Get(specID)
+				if sp != nil {
+					release = releaseFromVersion(sp.Version)
+				}
+				if release == "" {
+					release = "Rel-18"
+				}
+			}
+
+			results, err := c.SearchInSpec(specID, release, query, 20)
+			if err != nil {
+				return err
+			}
+			if len(results) == 0 && !jsonOut {
+				fmt.Println("no results found")
+				return nil
+			}
+			output(results)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&release, "release", "", "release label")
-	cmd.Flags().IntVarP(&contextLines, "context", "c", 0, "context lines around match")
 
 	return cmd
 }
@@ -122,9 +265,7 @@ func serverCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg.Transport = transport
 			cfg.ServerAddr = addr
-			// TODO: start MCP server
-			_ = cfg
-			fmt.Fprintln(os.Stderr, "not yet implemented")
+			fmt.Fprintf(os.Stderr, "MCP server transport=%s addr=%s (not yet implemented)\n", transport, addr)
 			return nil
 		},
 	}
@@ -140,7 +281,11 @@ func syncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Refresh the catalog from 3GPP dynareport",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(os.Stderr, "not yet implemented")
+			n, err := c.Catalog().Sync()
+			if err != nil {
+				return err
+			}
+			fmt.Printf("synced %d specs\n", n)
 			return nil
 		},
 	}
@@ -151,7 +296,17 @@ func cacheStatusCmd() *cobra.Command {
 		Use:   "cache-status",
 		Short: "Show which specs are locally cached",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(os.Stderr, "not yet implemented")
+			specs, err := c.CachedSpecs()
+			if err != nil {
+				return err
+			}
+			if len(specs) == 0 {
+				fmt.Println("no specs cached")
+				return nil
+			}
+			for _, s := range specs {
+				fmt.Printf("%s  %s\n", s.SpecID, s.Release)
+			}
 			return nil
 		},
 	}
@@ -163,7 +318,11 @@ func cacheClearCmd() *cobra.Command {
 		Short: "Remove cached content for a specification",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(os.Stderr, "not yet implemented")
+			specID := args[0]
+			if err := c.DeleteCachedSpec(specID); err != nil {
+				return err
+			}
+			fmt.Printf("cleared cache for %s\n", specID)
 			return nil
 		},
 	}
@@ -174,8 +333,16 @@ func repairCmd() *cobra.Command {
 		Use:   "repair",
 		Short: "Verify and repair database and indexes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(os.Stderr, "not yet implemented")
+			fmt.Println("repair not yet implemented")
 			return nil
 		},
 	}
+}
+
+// releaseFromVersion extracts release label from a version string like "19.3.0" → "Rel-19".
+func releaseFromVersion(version string) string {
+	if len(version) >= 2 {
+		return "Rel-" + version[:2]
+	}
+	return ""
 }
