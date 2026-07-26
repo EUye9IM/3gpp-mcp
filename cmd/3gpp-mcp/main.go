@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/3gpp-mcp/3gpp-mcp/internal/config"
@@ -401,8 +402,8 @@ func repairCmd() *cobra.Command {
 
 // releaseFromVersion extracts release label from a version string like "19.3.0" → "Rel-19".
 func releaseFromVersion(version string) string {
-	if len(version) >= 2 {
-		return "Rel-" + version[:2]
+	if idx := strings.IndexByte(version, '.'); idx >= 0 {
+		return "Rel-" + version[:idx]
 	}
 	return ""
 }

@@ -71,12 +71,17 @@ func TestCore_GetSpecOverview(t *testing.T) {
 	core, db, cleanup := setupCore(t)
 	defer cleanup()
 
-	// Insert catalog entry
 	tx, _ := db.Driver().Begin()
 	tx.Exec("INSERT INTO spec_catalog (id, title, series, wg, version) VALUES ('99.999', 'Test Spec', '99', 'X', '1.0.0')")
 	tx.Commit()
 
-	// No content cached — should return spec metadata only
+	specStore := store.NewSpecStore(db)
+	sections := []model.Section{
+		{SectionNumber: "1", ParentNumber: "", Title: "Top-level", Content: "top content"},
+		{SectionNumber: "1.1", ParentNumber: "1", Title: "Child", Content: "child content"},
+	}
+	specStore.InsertSections("99.999", "Rel-1", sections)
+
 	sp, children, err := core.GetSpecOverview("99.999")
 	if err != nil {
 		t.Fatalf("GetSpecOverview: %v", err)
@@ -87,8 +92,11 @@ func TestCore_GetSpecOverview(t *testing.T) {
 	if sp.ID != "99.999" {
 		t.Errorf("spec ID: want 99.999, got %s", sp.ID)
 	}
-	if children != nil {
-		t.Errorf("expected nil children for uncached spec, got %d", len(children))
+	if len(children) != 1 {
+		t.Errorf("expected 1 child section, got %d", len(children))
+	}
+	if children[0].SectionNumber != "1" {
+		t.Errorf("child section: want 1, got %s", children[0].SectionNumber)
 	}
 }
 

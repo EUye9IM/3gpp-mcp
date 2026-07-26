@@ -220,8 +220,8 @@ func marshalResult(v any) (*mcpgo.CallToolResult, error) {
 }
 
 func releaseFromVersion(version string) string {
-	if len(version) >= 2 {
-		return "Rel-" + version[:2]
+	if idx := strings.IndexByte(version, '.'); idx >= 0 {
+		return "Rel-" + version[:idx]
 	}
 	return ""
 }

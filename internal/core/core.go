@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/3gpp-mcp/3gpp-mcp/internal/ingest"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/model"
@@ -32,6 +33,7 @@ func (c *Core) ListSpecs(series, keyword string) ([]model.Spec, error) {
 }
 
 // GetSpecOverview returns a spec's metadata plus its top-level section directory.
+// If the spec has not been cached, it transparently triggers download and parsing.
 func (c *Core) GetSpecOverview(specID string) (*model.Spec, []model.Section, error) {
 	sp, err := c.catalogStore.Get(specID)
 	if err != nil {
@@ -41,16 +43,30 @@ func (c *Core) GetSpecOverview(specID string) (*model.Spec, []model.Section, err
 		return nil, nil, fmt.Errorf("spec %s not found in catalog", specID)
 	}
 
-	children, err := c.specStore.ListChildSections(specID, "", "")
-	if err != nil {
-		if err == store.ErrNotCached {
-			// Content not cached yet — return metadata only
-			return sp, nil, nil
+	release := releaseFromVersion(sp.Version)
+	if release == "" {
+		release = "Rel-18"
+	}
+
+	children, err := c.specStore.ListChildSections(specID, release, "")
+	if err == store.ErrNotCached {
+		if pipeErr := c.pipeline.Run(specID, release); pipeErr != nil {
+			return nil, nil, fmt.Errorf("ingest %s/%s: %w", specID, release, pipeErr)
 		}
+		children, err = c.specStore.ListChildSections(specID, release, "")
+	}
+	if err != nil {
 		return nil, nil, err
 	}
 
 	return sp, children, nil
+}
+
+func releaseFromVersion(version string) string {
+	if idx := strings.IndexByte(version, '.'); idx >= 0 {
+		return "Rel-" + version[:idx]
+	}
+	return ""
 }
 
 // GetSection returns a single section by spec, release, and section number.
