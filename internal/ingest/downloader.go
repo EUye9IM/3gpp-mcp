@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/3gpp-mcp/3gpp-mcp/internal/proxy"
 )
 
 // Downloader fetches 3GPP spec ZIP files from the 3GPP server.
@@ -20,8 +22,11 @@ type Downloader struct {
 
 // DownloaderConfig holds configuration for the downloader.
 type DownloaderConfig struct {
-	UserAgent string
-	Timeout   time.Duration
+	UserAgent  string
+	Timeout    time.Duration
+	HTTPProxy  string
+	HTTPSProxy string
+	NoProxy    string
 }
 
 // NewDownloader creates a new Downloader.
@@ -30,7 +35,7 @@ func NewDownloader(cfg DownloaderConfig) *Downloader {
 		cfg.Timeout = 30 * time.Second
 	}
 	return &Downloader{
-		httpClient: &http.Client{Timeout: cfg.Timeout},
+		httpClient: proxy.NewHTTPClient(cfg.Timeout, cfg.HTTPProxy, cfg.HTTPSProxy, cfg.NoProxy),
 		userAgent:  cfg.UserAgent,
 		baseURL:    "https://www.3gpp.org/ftp/Specs",
 	}

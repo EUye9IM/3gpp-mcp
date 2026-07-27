@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/3gpp-mcp/3gpp-mcp/internal/config"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/core"
+	"github.com/3gpp-mcp/3gpp-mcp/internal/proxy"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/ingest"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/mcp"
 	"github.com/3gpp-mcp/3gpp-mcp/internal/model"
@@ -65,14 +67,17 @@ func initCore() error {
 		return fmt.Errorf("open database: %w", err)
 	}
 
-	catStore := store.NewCatalogStore(db, cfg.HTTPUserAgent, cfg.DynareportURL)
+	catStore := store.NewCatalogStore(db, cfg.HTTPUserAgent, cfg.DynareportURL, proxy.NewHTTPClient(30*time.Second, cfg.HTTPProxy, cfg.HTTPSProxy, cfg.NoProxy))
 	specStore := store.NewSpecStore(db)
 	searchStore := store.NewSearchStore(db)
 
 	pipeline := ingest.NewPipeline(specStore, ingest.PipelineConfig{
 		DataDir: filepath.Join(cfg.DataDir, "cache"),
 		DownloaderCfg: ingest.DownloaderConfig{
-			UserAgent: cfg.HTTPUserAgent,
+			UserAgent:  cfg.HTTPUserAgent,
+			HTTPProxy:  cfg.HTTPProxy,
+			HTTPSProxy: cfg.HTTPSProxy,
+			NoProxy:    cfg.NoProxy,
 		},
 	})
 

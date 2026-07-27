@@ -26,7 +26,7 @@ func setupMCPServer(t *testing.T) (*server.MCPServer, *store.DB, func()) {
 		t.Fatalf("open db: %v", err)
 	}
 
-	catStore := store.NewCatalogStore(db, "", "")
+	catStore := store.NewCatalogStore(db, "", "", nil)
 	specStore := store.NewSpecStore(db)
 	searchStore := store.NewSearchStore(db)
 

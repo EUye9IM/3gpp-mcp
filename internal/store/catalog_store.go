@@ -14,17 +14,19 @@ import (
 // CatalogStore manages the spec_catalog table: syncing from dynareport
 // and querying spec metadata.
 type CatalogStore struct {
-	db       *sql.DB
-	httpUser string
-	dynaURL  string
+	db         *sql.DB
+	httpUser   string
+	dynaURL    string
+	httpClient *http.Client
 }
 
 // NewCatalogStore creates a new CatalogStore backed by the given DB.
-func NewCatalogStore(d *DB, userAgent, dynareportURL string) *CatalogStore {
+func NewCatalogStore(d *DB, userAgent, dynareportURL string, httpClient *http.Client) *CatalogStore {
 	return &CatalogStore{
-		db:       d.Driver(),
-		httpUser: userAgent,
-		dynaURL:  dynareportURL,
+		db:         d.Driver(),
+		httpUser:   userAgent,
+		dynaURL:    dynareportURL,
+		httpClient: httpClient,
 	}
 }
 
@@ -117,7 +119,7 @@ func (s *CatalogStore) fetchDynareport() (string, error) {
 	}
 	req.Header.Set("User-Agent", s.httpUser)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetch dynareport: %w", err)
 	}

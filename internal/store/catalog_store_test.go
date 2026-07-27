@@ -20,11 +20,11 @@ func TestCatalogStore_List_Empty(t *testing.T) {
 	db, _ := openTestStoreDB(t)
 	defer db.Close()
 
-	store := NewCatalogStore(db, "", "")
+	store := NewCatalogStore(db, "", "", nil)
 
 	specs, err := store.List("", "")
 	if err != nil {
-		t.Fatalf("List(): %v", err)
+		t.Fatalf("List() should not error on empty catalog: %v", err)
 	}
 	if len(specs) != 0 {
 		t.Errorf("empty catalog: want 0, got %d", len(specs))
@@ -35,7 +35,7 @@ func TestCatalogStore_SyncAndList(t *testing.T) {
 	db, _ := openTestStoreDB(t)
 	defer db.Close()
 
-	store := NewCatalogStore(db, "", "")
+	store := NewCatalogStore(db, "", "", nil)
 
 	// Insert test data directly
 	tx, err := db.Driver().Begin()
@@ -196,7 +196,7 @@ func TestSync_Integration(t *testing.T) {
 	db, _ := openTestStoreDB(t)
 	defer db.Close()
 
-	store := NewCatalogStore(db, "Mozilla/5.0 (compatible; 3gpp-mcp-test)", "https://www.3gpp.org/dynareport?code=status-report.htm")
+	store := NewCatalogStore(db, "Mozilla/5.0 (compatible; 3gpp-mcp-test)", "https://www.3gpp.org/dynareport?code=status-report.htm", nil)
 
 	n, err := store.Sync()
 	if err != nil {
